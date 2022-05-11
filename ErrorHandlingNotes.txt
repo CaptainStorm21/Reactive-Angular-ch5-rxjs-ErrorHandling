@@ -1,6 +1,6 @@
 Exploring error handling patterns and strategies
-The first classic pattern we will learn for handling 
-errors is based on the subscribe() method. 
+
+error is based on the subscribe() method. 
 The subscribe() method takes as input the object Observer, 
 which has three callbacks:
 
@@ -18,6 +18,12 @@ A complete callback that logs the stream completion:
      complete: () => console.log('Stream Completed'),
 })
 
+Issues with subscribe({})
+Using this approach, we cannot, recover from the error or emit an alternative 
+fallback value that replaces the value that we were expecting from the backend.
+
+__________________________________________________________________________
+
 try-catch 
 which consists of a try block followed by one or more catch 
 clauses. In the try block, you place your risky statements, 
@@ -31,15 +37,23 @@ and inside catch, you handle the possible exceptions:
        // handle exceptions
    }
 
-RxJS ships with the catchError operator, which provides us with 
+RxJS has the catchError operator, which provides us with 
 something close to the try-catch statement
+The catchError operator is going to take the error and 
+pass it to the error handling function.
 
 The catchError operator
-catchError, according to the RxJS official documentation, "catches errors on the observable to be handled by returning a new observable or throwing an error."
+catchError, according to the RxJS official documentation, 
+"catches errors on the observable to be handled by returning a new observable 
+or throwing an error."
+The catchError operator subscribes to the source Observable that might error 
+out and emits values to the observer until an error occurs. When that happens, 
+the catchError operator executes a callback function, passing in the error. 
+This callback function is responsible for handling errors and always returns an Observable.
 
-The catchError operator subscribes to the source Observable that might error out and emits values to the observer until an error occurs. When that happens, the catchError operator executes a callback function, passing in the error. This callback function is responsible for handling errors and always returns an Observable.
-
-If there are no errors, the output Observable returned by catchError works exactly the same way as the source Observable. You can use catchError multiple times in an Observable chain:
+If there are no errors, the output Observable returned by catchError works exactly 
+the same way as the source Observable. You can use catchError multiple times in 
+an Observable chain:
 
  import { catchError} from 'rxjs/operators';
 //stream$ is the source Observable that might error out
@@ -57,7 +71,8 @@ A rethrow strategy
 A retry strategy
 
 A replace strategy
-The error handling function returns an Observable, which is going to be a replacement Observable for the stream that just errored out. This replacement Observable is then going to be subscribed to, and its values are going to be used in place of the errored-out input Observable:
+The error handling function returns an Observable, which is going to be a replacement Observable for the stream that just errored out. 
+This replacement Observable is then going to be subscribed to, and its values are going to be used in place of the errored-out input Observable:
 
 import { from, of } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
@@ -70,11 +85,13 @@ stream$
       }
       return parseInt(value);
     }),
+    /*
     catchError((error) => {
       console.log('Caught Error', error);
       return of();
     })
   )
+  */
   .subscribe({
     next: (res) => console.log('Value Emitted', res),
     error: (err) => console.log('Error Occurred', err),
@@ -124,7 +141,9 @@ Therefore, when an error occurs, the current stream that errored out will get re
 
 
 A rethrow strategy
-A rethrow strategy consists in rethrowing the error or, in other words, propagating the error to the subscribers of the output Observable of catchError. This propagation mechanism allows you to rethrow the error caught by catchError and not only handle it locally. Let's look at this example, which is the same as the replace strategy one. The only difference is in the handling error function:
+A rethrow strategy consists in rethrowing the error or, in other words, 
+propagating the error to the subscribers of the output Observable of catchError. 
+This propagation mechanism allows you to rethrow the error caught by catchError and not only handle it locally. Let's look at this example, which is the same as the replace strategy one. The only difference is in the handling error function:
 
 import { from, throwError } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
@@ -161,5 +180,41 @@ In the handle error function, we return an Observable that is created using the 
 
   Please note that in the previous examples, we simply log the error in the console for demonstration purposes. But in a real-world scenario, you can do much more, such as showing messages to the users.
 
+___________________________________________________________________________________
+Catch and replace strategy
 
-  A retrying strategy
+const http$ = this.http.get<Books[]>('/api/books');
+
+http$
+    .pipe(
+        catchError(err => of([]))
+    )
+    .subscribe(
+        res => console.log('HTTP response', res),
+        err => console.log('HTTP Error', err),
+        () => console.log('HTTP request completed.')
+    );
+
+    Let's break down the implementation of the catch and replace strategy:
+
+we are passing to the catchError operator a function, which is the error handling function
+the error handling function is not called immediately, and in general, it's usually not called
+only when an error occurs in the input Observable of catchError, will the error handling function be called
+if an error happens in the input stream, this function is then returning an Observable built using the of([]) function
+the of() function builds an Observable that emits only one value ([]) and then it completes
+the error handling function returns the recovery Observable (of([])), that gets subscribed to by the catchError operator
+the values of the recovery Observable are then emitted as replacement values in the output Observable returned by catchError
+As the end result, the http$ Observable will not error out anymore! Here is the result that we get in the console:
+
+HTTP response []
+HTTP request completed.
+As we can see, the error handling callback in subscribe() is not invoked anymore. Instead, here is what happens:
+
+the empty array value [] is emitted
+the http$ Observable is then completed
+As we can see, the replacement Observable was used to provide a default fallback value ([]) to the subscribers of http$, 
+despite the fact that the original Observable did error out.
+
+Notice that we could have also added some local error handling, before returning the replacement Observable!
+
+___________________________________________________________________________________________________________________________-
