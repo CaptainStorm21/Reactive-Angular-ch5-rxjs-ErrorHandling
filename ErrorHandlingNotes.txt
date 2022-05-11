@@ -1,0 +1,165 @@
+Exploring error handling patterns and strategies
+The first classic pattern we will learn for handling 
+errors is based on the subscribe() method. 
+The subscribe() method takes as input the object Observer, 
+which has three callbacks:
+
+A success callback: This is called every time the stream emits a value and receives as input the value emitted.
+An error callback: This is called when an error occurs and receives as input the error itself.
+A completion callback: This is called when the stream completes.
+
+A success callback that logs the received value in the console
+An error callback that logs the received error in the console
+A complete callback that logs the stream completion:
+
+    stream$.subscribe({
+     next: (res) => console.log('Value Emitted', res),
+     error: (err) => console.log('Error Occurred', err),
+     complete: () => console.log('Stream Completed'),
+})
+
+try-catch 
+which consists of a try block followed by one or more catch 
+clauses. In the try block, you place your risky statements, 
+and inside catch, you handle the possible exceptions:
+
+
+    try {
+      // risky statements
+   }
+   catch(error) {
+       // handle exceptions
+   }
+
+RxJS ships with the catchError operator, which provides us with 
+something close to the try-catch statement
+
+The catchError operator
+catchError, according to the RxJS official documentation, "catches errors on the observable to be handled by returning a new observable or throwing an error."
+
+The catchError operator subscribes to the source Observable that might error out and emits values to the observer until an error occurs. When that happens, the catchError operator executes a callback function, passing in the error. This callback function is responsible for handling errors and always returns an Observable.
+
+If there are no errors, the output Observable returned by catchError works exactly the same way as the source Observable. You can use catchError multiple times in an Observable chain:
+
+ import { catchError} from 'rxjs/operators';
+//stream$ is the source Observable that might error out
+stream$.pipe(
+      catchError(error => {
+          //handle the error received
+      })
+    ).subscribe()
+  }
+
+When it comes to handling errors, there are three strategies:
+
+A replace strategy
+A rethrow strategy
+A retry strategy
+
+A replace strategy
+The error handling function returns an Observable, which is going to be a replacement Observable for the stream that just errored out. This replacement Observable is then going to be subscribed to, and its values are going to be used in place of the errored-out input Observable:
+
+import { from, of } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
+const stream$ = from(['5', '10', '6', 'Hello', '2']);
+stream$
+  .pipe(
+    map((value) => {
+      if (isNaN(value as any)) {
+        throw new Error('This is not a number');
+      }
+      return parseInt(value);
+    }),
+    catchError((error) => {
+      console.log('Caught Error', error);
+      return of();
+    })
+  )
+  .subscribe({
+    next: (res) => console.log('Value Emitted', res),
+    error: (err) => console.log('Error Occurred', err),
+    complete: () => console.log('Stream Completed'),
+  });
+//output
+Value Emitted 5
+Value Emitted 10
+Value Emitted 6
+Caught Error Error: This is not a number
+Stream Completed
+
+1. We have an Observable stream$ created from an array of string values, ['5', '10', '6', 'Hello', '2'], using the from creation operator.
+2. from operator - Converts almost anything to an Observable that can be iterated
+example 
+          import { from } from 'rxjs';
+
+        const array = [10, 20, 30];
+        const result = from(array);
+
+        result.subscribe(x => console.log(x));
+
+        // Logs:
+        // 10
+        // 20
+        // 30
+
+3. We use two operators on stream$:
+
+The map operator: To transform the string values emitted to integers using the parseInt() method. If the value emitted is not a number, then the "This is not a number" error is thrown.
+The catchError operator: We pass to it the error handling function that will log the catched error and return an empty of()Observable.
+
+4. Then, we subscribe to the stream$ and log a custom message in every callback.
+What happens at execution time?
+
+At execution time, stream$ will emit the string values of the array one by one, respectively '5', '10', and '6'. The map takes those values one by one as input and returns respectively the 5, 10, and 6 integers. catchError() takes the values emitted from the map operator and forwards them as output; the error handling function will not get called, as there is no error. Hence, the subscribers receive 5, 10, and 6.
+
+catchError() comes into play when the 'Hello' value is emitted. The map operator will throw an error, and the error handling function in catchError() will get called consequently.
+
+The error handling function in our case simply logs an error in the console and returns an empty Observable in this example. This empty Observable will be the replacement Observable.
+
+catchError() will subscribe under the hood to the returned Observable. The of() Observable will emit a value and complete. The empty value is emitted and then stream$ is completed, so the second value will not get emitted.
+
+As you may have noticed, the error callback in the subscribe() method will not get called because we handled it. I added it on purpose to understand the behavior of error handling with catchError.
+
+Therefore, when an error occurs, the current stream that errored out will get replaced by the stream returned from the catchError(); the values of the replaced Observable will then get emitted instead of the original stream values. This is what we call fallback values.
+
+
+A rethrow strategy
+A rethrow strategy consists in rethrowing the error or, in other words, propagating the error to the subscribers of the output Observable of catchError. This propagation mechanism allows you to rethrow the error caught by catchError and not only handle it locally. Let's look at this example, which is the same as the replace strategy one. The only difference is in the handling error function:
+
+import { from, throwError } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
+const stream$ = from(['5', '10', '6', 'Hello', '2']);
+stream$
+  .pipe(
+    map((value) => {
+      if (isNaN(value as any)) {
+        throw new Error('This is not a number');
+      }
+      return parseInt(value);
+    }),
+    catchError((error) => {
+      console.log('Caught Error', error);
+      return throwError(() => error);
+    })
+  )
+  .subscribe({
+    next: (res) => console.log('Value Emitted', res),
+    error: (err) => console.log('Error Occurred', err),
+    complete: () => console.log('Stream Completed'),
+  });
+//output
+Value Emitted 5
+Value Emitted 10
+Value Emitted 6
+Caught Error Error: This is not a number
+Error Occurred Error: This is not a number
+
+
+In the handle error function, we return an Observable that is created using the throwError operator.
+ throwError creates an Observable that never emits any value. Instead, it errors out immediately using the same error caught by catchError.
+  the output Observable of catchError will also error out with the exact same error thrown by the source Observable. The error can now be further handled by the rest of the Observable chain, if needed. As you may have noticed, the same error was logged both in the catchError block and in the subscriber error handler function, as expected.
+
+  Please note that in the previous examples, we simply log the error in the console for demonstration purposes. But in a real-world scenario, you can do much more, such as showing messages to the users.
+
+
+  A retrying strategy
