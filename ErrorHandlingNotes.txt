@@ -19,8 +19,9 @@ A complete callback that logs the stream completion:
 })
 
 Issues with subscribe({})
-Using this approach, we cannot, recover from the error or emit an alternative 
-fallback value that replaces the value that we were expecting from the backend.
+Using this approach, we cannot, recover from the error or 
+emit an alternative  fallback value that replaces the 
+value that we were expecting from the backend.
 
 __________________________________________________________________________
 
@@ -217,4 +218,136 @@ despite the fact that the original Observable did error out.
 
 Notice that we could have also added some local error handling, before returning the replacement Observable!
 
-___________________________________________________________________________________________________________________________-
+___________________________________________________________________________________________________________________________
+
+Retrying strategy
+
+You can also retry the observable using the retry operator to give another chance to the stream. The retry operator retries an Observable a specific number of times. It is useful for retrying HTTP requests, for example:
+
+import { catchError, map, retry } from 'rxjs/operators';
+import { from, throwError } from 'rxjs';
+const stream$ = from(['5', '10', '6', 'Hello', '2']);
+stream$
+  .pipe(
+    map((value) => {
+      if (isNaN(value as any)) {
+        throw new Error('This is not a number');
+      }
+      return parseInt(value);
+    }),
+    retry(2),
+    catchError((error) => {
+      console.log('Caught Error', error);
+      return throwError(() => error);
+    })
+  )
+  .subscribe({
+    next: (res) => console.log('Value Emitted', res),
+    error: (err) => console.log('Error Occurred', err),
+    complete: () => console.log('Stream Completed'),
+  });
+//output
+Value Emitted 5
+10
+6
+5
+10
+6
+5
+10
+6
+Caught Error Error: This is not a number
+Error Occurred Error: This is not a number
+
+__________________________________________________________________________
+
+RetryWhen
+
+import { from} from 'rxjs';
+import { map, retryWhen, tap } from 'rxjs/operators';
+const stream$ = from(['5', '10', '6', 'Hello', '2']);
+stream$
+  .pipe(
+    map((value) => {
+      if (isNaN(value as any)) {
+        throw new Error('This is not a number');
+      }
+      return parseInt(value);
+    }),
+    retryWhen((errors) => {
+      return errors.pipe(
+        tap(() => console.log('Retrying the source 
+                              Observable...'))
+      );
+    })
+  )
+  .subscribe({
+    next: (res) => console.log('Value Emitted', res),
+    error: (err) => console.log('Error Occurred', err),
+    complete: () => console.log('Stream Completed'),
+  });
+//Code runs infinitely
+
+
+If you execute that code, you will find out that it runs infinitely. Why? Because the source will always error out, and retryWhen will consequently subscribe infinitely to the source Observable.
+
+If the source always errors out, it is not correct to retry immediately. However, the error will not always occur – for example, in the case of HTTP requests. Sometimes, the HTTP request fails because the server is down, or there is another reason that may disappear, and the request might go through in the next attempts without any problem.
+
+In that case, you can use the immediate retry or even a delayed retry, which is retrying after a certain delay where we can wait, for example, for 5 seconds after the error occurs before retrying.
+
+__________________________________________________________________________
+
+The delayWhen operator
+The first Observable is the source Observable. Every value emitted by the source Observable will be delayed before being emitted to the output Observable. The delay is completely flexible through the durationSelector function.
+
+Each of the a, b, and c values has its own duration selector Observable, which will emit one value and then complete. When the selector emits a value, the corresponding a, b, or c input value is going to show up in the output of delayWhen.
+
+As you can see, the selector of b emitted the last one; that's why the b value was emitted last.
+
+delayWhen can be used when you need to delay a value until some other action takes place. For example, when you login a user and return the token, you may need to perform an action on the token before returning it to the calling method.
+
+Here’s an example that demonstrates how wait until the token is added to the local storage before sending it to the observer:
+
+login().pipe(
+   delayWhen((user) => setToLocalStorage(user))
+).subscribe((user) => console.log(user));
+
+function login() {
+   return fromFetch('https://reqres.in/api/users/2').pipe(
+       switchMap((response) => response.json())
+   );
+}
+
+function setToLocalStorage(value) {
+   return of(value).pipe(
+       tap((value) => {
+           localStorage.setItem('token', JSON.stringify(value));
+       })
+   );
+}
+
+https://indepth-rxjs-delay-when.stackblitz.io
+
+__________________________________________________________________________
+
+replacement strategy use case
+
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Recipe } from '../model/recipe.model';
+import { environment } from 'src/environments/environment';
+import { catchError, of } from 'rxjs';
+const BASE_PATH = environment.basePath
+@Injectable({
+  providedIn: 'root'
+})
+export class RecipesService {
+  recipes$ = this.http.get<Recipe[]>(
+   '${BASE_PATH}/recipes').pipe(
+    catchError(error => of([])));
+  constructor(private http: HttpClient) { }
+}
+
+
+This way, your application will keep on working, and if you open the app, you will see an empty list.
+
